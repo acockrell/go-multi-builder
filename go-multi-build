@@ -1,0 +1,50 @@
+#!/bin/bash
+
+package="${1}"
+
+if [[ -z "$package" ]]; then
+  echo "usage: $0 <package-name>"
+  exit 1
+fi
+
+
+set -eu
+
+package_split=(${package//\// })
+# Test if package_split is empty.  
+if [[ -z ${package_split} ]]; then
+  # if so, just assume that you're building locally
+  package_name=${package}
+else
+  # otherwise - reamote package and we need the last element of the array.
+  # Doing this the hard way, because I don't have Bash 4.1
+  # Maximum Effort.
+  package_name=${package_split[${#package_split[@]}-1]}
+fi
+
+# Add your platforms here.  See README for further information.
+platforms=( "linux/amd64" "darwin/amd64" )
+
+for platform in "${platforms[@]}"
+do
+    platform_split=(${platform//\// })
+    GOOS=${platform_split[0]}
+    GOARCH=${platform_split[1]}
+
+    output_name=$package_name'-'$GOOS'-'$GOARCH
+
+    if [ $GOOS = "windows" ]; then
+        output_name+='.exe'
+    fi
+
+    CGO_ENABLED=0  
+    GOCACHE="${WORKSPACE}" 
+    echo "Building ${package} for ${GOOS} on ${GOARCH}..."
+    go build -a -ldflags '-extldflags "-static"' -o "${output_name}" .
+    
+    if [ $? -ne 0 ]; then
+        echo 'An error has occurred! Aborting the script execution...'
+        exit 1
+    fi
+
+done
