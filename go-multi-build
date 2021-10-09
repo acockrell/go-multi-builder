@@ -23,7 +23,7 @@ else
 fi
 
 # Add your platforms here.  See README for further information.
-platforms=( "linux/amd64" "darwin/amd64" )
+platforms=( "linux/amd64" "darwin/amd64" "darwin/arm64" )
 
 for platform in "${platforms[@]}"
 do
@@ -40,7 +40,7 @@ do
     CGO_ENABLED=0  
     GOCACHE="${WORKSPACE}" 
     echo "Building ${package} for ${GOOS} on ${GOARCH}..."
-    go build -a -ldflags '-extldflags "-static"' -o "${output_name}" .
+    GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags '-extldflags "-static"' -o "${output_name}" .
     
     if [ $? -ne 0 ]; then
         echo 'An error has occurred! Aborting the script execution...'
