@@ -10,7 +10,7 @@
 ## Core Features
 
 ### Configuration
-- [ ] Make platforms configurable via `.go-multi-build.conf` or env var
+- [ ] Make platforms configurable via `go-multi-build.conf` or env var
 - [ ] Support custom ldflags from config or CLI
 - [ ] Add command-line flags: `--platforms`, `--output-dir`, `--parallel`, `--compress`
 - [ ] Add `-h/--help` flag
