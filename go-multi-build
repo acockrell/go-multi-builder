@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eu
+set -euo pipefail
 
 # Default configuration
 DEFAULT_PLATFORMS=( "linux/amd64" "darwin/amd64" "darwin/arm64" )
@@ -232,15 +232,8 @@ if [[ ! -f "go.mod" ]]; then
     log_warning "This might not be a Go module. Builds may fail."
 fi
 
-# Determine package name
-package_split=(${package//\// })
-if [[ -z ${package_split} ]]; then
-    # if so, just assume that you're building locally
-    package_name=${package}
-else
-    # otherwise - remote package and we need the last element of the array.
-    package_name=${package_split[${#package_split[@]}-1]}
-fi
+# Determine package name (extract last component from path)
+package_name=$(basename "${package}")
 
 # Extract version information from git if requested
 if [[ "$EMBED_VERSION" == true ]]; then
@@ -300,10 +293,10 @@ if [[ "$CLEANUP" == true ]]; then
         GOOS=${platform_split[0]}
         GOARCH=${platform_split[1]}
         output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
-        if [ "$GOOS" = "windows" ]; then
+        if [[ "${GOOS}" = "windows" ]]; then
             output_name+='.exe'
         fi
-        if [[ -f "$output_name" ]]; then
+        if [[ -f "${output_name}" ]]; then
             rm -f "$output_name"
             log_verbose "Removed: $output_name"
         fi
@@ -327,7 +320,7 @@ if [[ "$DRY_RUN" == true ]]; then
         GOOS=${platform_split[0]}
         GOARCH=${platform_split[1]}
         output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
-        if [ "$GOOS" = "windows" ]; then
+        if [[ "${GOOS}" = "windows" ]]; then
             output_name+='.exe'
         fi
         echo "  - ${GOOS}/${GOARCH} -> ${output_name}"
@@ -354,12 +347,12 @@ build_platform() {
 
     local output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
 
-    if [ "$GOOS" = "windows" ]; then
+    if [[ "${GOOS}" = "windows" ]]; then
         output_name+='.exe'
     fi
 
     # Check if incremental build and binary already exists
-    if [[ "$INCREMENTAL" == true ]] && [[ -f "$output_name" ]]; then
+    if [[ "${INCREMENTAL}" == true ]] && [[ -f "${output_name}" ]]; then
         local file_size=$(du -h "$output_name" | cut -f1)
         log_info "⊙ Skipped ${GOOS}/${GOARCH} (already exists, ${file_size})"
         BUILD_SUMMARY+=("SKIP|${GOOS}/${GOARCH}|${file_size}|0.00s")
@@ -377,7 +370,7 @@ build_platform() {
         local build_result=${PIPESTATUS[0]}
     fi
 
-    if [ $build_result -ne 0 ]; then
+    if [[ "${build_result}" -ne 0 ]]; then
         log_error "Error: Build failed for ${GOOS}/${GOARCH}"
         BUILD_SUMMARY+=("FAIL|${GOOS}/${GOARCH}|N/A|N/A")
         return 1
@@ -407,10 +400,10 @@ build_platform() {
     fi
 
     # Create archive if requested
-    if [[ "$ARCHIVE" == true ]]; then
+    if [[ "${ARCHIVE}" == true ]]; then
         log_verbose "Creating archive for ${output_name}..."
         local archive_name
-        if [ "$GOOS" = "windows" ]; then
+        if [[ "${GOOS}" = "windows" ]]; then
             # Create .zip for Windows
             archive_name="${output_name}.zip"
             zip -q "$archive_name" "$(basename "$output_name")"
@@ -447,7 +440,7 @@ if [[ "$PARALLEL" == true ]]; then
         fi
     done
 
-    if [ $failed -ne 0 ]; then
+    if [[ "${failed}" -ne 0 ]]; then
         echo ""
         echo "Error: One or more builds failed"
         exit 1
@@ -537,7 +530,7 @@ EOF
         local goos=${platform_split[0]}
         local goarch=${platform_split[1]}
         local binary_name="${package_name}-${goos}-${goarch}"
-        if [ "$goos" = "windows" ]; then
+        if [[ "${goos}" = "windows" ]]; then
             binary_name+='.exe'
         fi
 

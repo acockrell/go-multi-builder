@@ -40,10 +40,10 @@
 
 ## Code Quality
 
-- [ ] Simplify package name parsing (use `basename` instead of array logic)
-- [ ] Add `set -o pipefail` for better error detection
-- [ ] Consistent quoting in conditionals
-- [ ] Consistent variable bracing
+- [x] Simplify package name parsing (use `basename` instead of array logic)
+- [x] Add `set -o pipefail` for better error detection
+- [x] Consistent quoting in conditionals
+- [x] Consistent variable bracing
 
 ## Advanced Features (Future)
 
