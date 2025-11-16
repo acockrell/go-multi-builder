@@ -243,6 +243,47 @@ MANIFEST=true
 - Includes all build metadata
 - Useful for CI/CD tracking
 
+### VALIDATE
+
+**Type**: Boolean (`true` or `false`)
+**Default**: `false`
+**Description**: Validate cross-compiled binaries
+
+```bash
+VALIDATE=true
+```
+
+**Checks**:
+- File format (ELF/Mach-O/PE)
+- Architecture matches target
+- Executable permissions
+- Size sanity checks
+
+**Use cases**:
+- Ensure build correctness
+- Detect cross-compilation issues
+- Quality assurance
+
+### VALIDATE_STRICT
+
+**Type**: Boolean (`true` or `false`)
+**Default**: `false`
+**Description**: Fail build on validation errors
+
+```bash
+VALIDATE_STRICT=true
+```
+
+**Effect**:
+- Enables VALIDATE automatically
+- Stops build on validation failure
+- Non-zero exit code
+
+**Use cases**:
+- CI/CD pipelines
+- Release builds
+- Automated deployments
+
 ### VERBOSE
 
 **Type**: Boolean (`true` or `false`)
@@ -370,7 +411,7 @@ CONFIG_FILE=dev.conf ./go-multi-build
 
 ### Production Release Configuration
 
-Optimized binaries for all major platforms with full artifacts:
+Optimized binaries for all major platforms with full artifacts and validation:
 
 ```bash
 # release.conf
@@ -383,6 +424,7 @@ EMBED_VERSION=true
 CHECKSUMS=true
 ARCHIVE=true
 MANIFEST=true
+VALIDATE=true
 CLEANUP=true
 ```
 
@@ -395,7 +437,8 @@ This creates:
 - Stripped, compressed binaries
 - SHA256 checksum files
 - Release archives (.tar.gz/.zip)
-- Build manifest JSON
+- Build manifest JSON with validation results
+- Validated cross-compiled binaries
 
 ### CI/CD Configuration
 

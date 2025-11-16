@@ -456,6 +456,80 @@ Generate build manifest JSON file
 - CI/CD integration
 - Audit trails
 
+#### `--validate`
+
+Validate cross-compiled binaries after building
+
+**Type**: Boolean flag (no argument)
+**Default**: No validation
+
+```bash
+./go-multi-build --validate
+./go-multi-build -P --validate
+```
+
+**What it checks**:
+- **File format** - Verifies ELF (Linux/BSD), Mach-O (macOS), or PE (Windows)
+- **Architecture** - Confirms binary matches target GOARCH (amd64, arm64, etc.)
+- **Executable permission** - Ensures binary has +x permission
+- **Size sanity** - Warns if binary is suspiciously small (<10KB) or large (>500MB)
+
+**Validation output (verbose mode)**:
+```
+Validating ./build/myapp-linux-amd64...
+  ✓ Format: ELF (linux)
+  ✓ Architecture: x86-64
+  ✓ Executable: Yes
+  ✓ Size: 8.2M (8601234 bytes)
+  ✓ Validation passed
+```
+
+**Use cases**:
+- Ensure cross-compilation worked correctly
+- Detect build issues early
+- Verify binaries before distribution
+- CI/CD quality gates
+
+**Note**: Validation results are included in manifest JSON when using `--manifest`
+
+#### `--validate-strict`
+
+Fail build if validation errors occur
+
+**Type**: Boolean flag (no argument)
+**Default**: Warnings only (build continues)
+
+```bash
+./go-multi-build --validate-strict
+./go-multi-build --validate --validate-strict
+```
+
+**Behavior**:
+- Automatically enables `--validate`
+- Stops build immediately on validation failure
+- Returns non-zero exit code
+- Suitable for CI/CD pipelines
+
+**Example failure**:
+```
+Validating ./build/myapp-linux-amd64...
+  ✗ Format: Expected ELF for linux, got: Mach-O
+  ✗ Architecture: Expected x86-64, got: ARM64
+  ✗ Validation failed
+Build aborted due to validation failure (--validate-strict)
+Error: One or more builds failed
+```
+
+**When to use**:
+- CI/CD pipelines (enforce quality)
+- Release builds (prevent bad binaries)
+- Automated deployments
+
+**When not to use**:
+- Development builds (too strict)
+- Experimental platforms
+- When iterating quickly
+
 ---
 
 ### Utility Options
@@ -520,7 +594,7 @@ Remove old binaries before building
 
 #### Production Release
 ```bash
-./go-multi-build -P -v -s -c --checksums --archive --manifest --cleanup -o release
+./go-multi-build -P -v -s -c --checksums --archive --manifest --validate --cleanup -o release
 ```
 - Parallel (fast)
 - Version embedded
@@ -529,16 +603,18 @@ Remove old binaries before building
 - Checksums generated
 - Archives created
 - Manifest file
+- Validation enabled
 - Clean build
 - Output to `release/`
 
 #### CI/CD Build
 ```bash
-./go-multi-build -P -q --no-color -o dist
+./go-multi-build -P -q --no-color --validate-strict -o dist
 ```
 - Parallel (fast)
 - Quiet (minimal logs)
 - No colors (clean logs)
+- Strict validation (fail on errors)
 - Output to `dist/`
 
 #### Quick Test Build

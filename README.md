@@ -92,6 +92,8 @@ A powerful Bash script for building Go projects across multiple platforms in a s
 | `--checksums` | Generate SHA256 checksum files |
 | `--archive` | Create release archives (.tar.gz/.zip) |
 | `--manifest` | Generate build manifest JSON file |
+| `--validate` | Validate cross-compiled binaries |
+| `--validate-strict` | Fail build on validation errors |
 | `--no-color` | Disable colored output |
 
 ## Configuration

@@ -47,6 +47,6 @@
 
 ## Advanced Features (Future)
 
-- [ ] Cross-compilation validation
+- [x] Cross-compilation validation
 - [ ] Integration with goreleaser-style configuration
 - [ ] Custom binary naming patterns

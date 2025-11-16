@@ -20,6 +20,8 @@ STRIP=false
 CHECKSUMS=false
 ARCHIVE=false
 MANIFEST=false
+VALIDATE=false
+VALIDATE_STRICT=false
 
 # Color codes (if colors are enabled)
 COLOR_RED='\033[0;31m'
@@ -55,6 +57,8 @@ OPTIONS:
     --checksums             Generate SHA256 checksums for binaries
     --archive               Create release archives (.tar.gz for Unix, .zip for Windows)
     --manifest              Generate build manifest file (JSON)
+    --validate              Validate cross-compiled binaries (format, arch, size)
+    --validate-strict       Fail build if validation errors occur
     --cleanup               Remove all previously built binaries before building
     --no-color              Disable colored output
 
@@ -152,6 +156,15 @@ while [[ $# -gt 0 ]]; do
             ;;
         --manifest)
             MANIFEST=true
+            shift
+            ;;
+        --validate)
+            VALIDATE=true
+            shift
+            ;;
+        --validate-strict)
+            VALIDATE=true
+            VALIDATE_STRICT=true
             shift
             ;;
         -*)
@@ -338,6 +351,149 @@ format_duration() {
     fi
 }
 
+# Validate binary function
+validate_binary() {
+    local binary_path=$1
+    local expected_goos=$2
+    local expected_goarch=$3
+    local validation_results=""
+    local has_errors=false
+
+    log_verbose "Validating ${binary_path}..."
+
+    # Check if file exists
+    if [[ ! -f "${binary_path}" ]]; then
+        log_error "  ✗ File not found: ${binary_path}"
+        echo "format:fail,arch:fail,executable:fail,size:fail"
+        return 1
+    fi
+
+    # Check file format and architecture using 'file' command
+    local file_output=$(file "${binary_path}" 2>/dev/null)
+    local format_valid=false
+    local arch_valid=false
+
+    # Validate based on expected platform
+    case "${expected_goos}" in
+        linux|freebsd|openbsd|netbsd)
+            if echo "${file_output}" | grep -q "ELF"; then
+                format_valid=true
+                log_verbose "  ✓ Format: ELF (${expected_goos})"
+            else
+                log_warning "  ✗ Format: Expected ELF for ${expected_goos}, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        darwin)
+            if echo "${file_output}" | grep -q "Mach-O"; then
+                format_valid=true
+                log_verbose "  ✓ Format: Mach-O (macOS)"
+            else
+                log_warning "  ✗ Format: Expected Mach-O for macOS, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        windows)
+            if echo "${file_output}" | grep -qE "PE32|MS Windows"; then
+                format_valid=true
+                log_verbose "  ✓ Format: PE (Windows)"
+            else
+                log_warning "  ✗ Format: Expected PE for Windows, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        *)
+            log_verbose "  ⊙ Format: Unknown OS ${expected_goos}, skipping format check"
+            format_valid=true
+            ;;
+    esac
+
+    # Validate architecture
+    case "${expected_goarch}" in
+        amd64)
+            if echo "${file_output}" | grep -qE "x86-64|x86_64|AMD64"; then
+                arch_valid=true
+                log_verbose "  ✓ Architecture: x86-64"
+            else
+                log_warning "  ✗ Architecture: Expected x86-64, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        386)
+            if echo "${file_output}" | grep -qE "i386|80386|x86"; then
+                arch_valid=true
+                log_verbose "  ✓ Architecture: i386"
+            else
+                log_warning "  ✗ Architecture: Expected i386, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        arm64)
+            if echo "${file_output}" | grep -qE "arm64|aarch64|ARM aarch64"; then
+                arch_valid=true
+                log_verbose "  ✓ Architecture: ARM64"
+            else
+                log_warning "  ✗ Architecture: Expected ARM64, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        arm)
+            if echo "${file_output}" | grep -qE "ARM|armv"; then
+                arch_valid=true
+                log_verbose "  ✓ Architecture: ARM"
+            else
+                log_warning "  ✗ Architecture: Expected ARM, got: ${file_output}"
+                has_errors=true
+            fi
+            ;;
+        *)
+            log_verbose "  ⊙ Architecture: ${expected_goarch} (unable to verify)"
+            arch_valid=true
+            ;;
+    esac
+
+    # Check if executable
+    local executable_valid=false
+    if [[ -x "${binary_path}" ]]; then
+        executable_valid=true
+        log_verbose "  ✓ Executable: Yes"
+    else
+        log_warning "  ✗ Executable: No (missing +x permission)"
+        has_errors=true
+    fi
+
+    # Size sanity check
+    local file_size_bytes=$(stat -f%z "${binary_path}" 2>/dev/null || stat -c%s "${binary_path}" 2>/dev/null)
+    local size_valid=true
+
+    if [[ "${file_size_bytes}" -lt 10000 ]]; then
+        log_warning "  ⚠ Size: Very small (${file_size_bytes} bytes) - possible incomplete build"
+        size_valid=false
+    elif [[ "${file_size_bytes}" -gt 500000000 ]]; then
+        log_warning "  ⚠ Size: Very large (${file_size_bytes} bytes) - possible debug symbols"
+        size_valid=false
+    else
+        log_verbose "  ✓ Size: $(du -h "${binary_path}" | cut -f1) (${file_size_bytes} bytes)"
+    fi
+
+    # Build validation result string
+    validation_results="format:$(${format_valid} && echo 'pass' || echo 'fail')"
+    validation_results="${validation_results},arch:$(${arch_valid} && echo 'pass' || echo 'fail')"
+    validation_results="${validation_results},executable:$(${executable_valid} && echo 'pass' || echo 'fail')"
+    validation_results="${validation_results},size:$(${size_valid} && echo 'pass' || echo 'warn')"
+
+    # Summary
+    if [[ "${has_errors}" == true ]]; then
+        log_error "  ✗ Validation failed for ${binary_path}"
+        echo "${validation_results}"
+        return 1
+    else
+        log_success "  ✓ Validation passed for ${binary_path}"
+        echo "${validation_results}"
+        return 0
+    fi
+}
+
 # Build function
 build_platform() {
     local platform=$1
@@ -355,7 +511,7 @@ build_platform() {
     if [[ "${INCREMENTAL}" == true ]] && [[ -f "${output_name}" ]]; then
         local file_size=$(du -h "$output_name" | cut -f1)
         log_info "⊙ Skipped ${GOOS}/${GOARCH} (already exists, ${file_size})"
-        BUILD_SUMMARY+=("SKIP|${GOOS}/${GOARCH}|${file_size}|0.00s")
+        BUILD_SUMMARY+=("SKIP|${GOOS}/${GOARCH}|${file_size}|0.00s|||not_validated")
         return 0
     fi
 
@@ -390,6 +546,19 @@ build_platform() {
     local file_size_bytes=$(stat -f%z "$output_name" 2>/dev/null || stat -c%s "$output_name" 2>/dev/null)
     local formatted_duration=$(format_duration "$duration")
 
+    # Validate binary if requested
+    local validation_results="not_validated"
+    if [[ "${VALIDATE}" == true ]]; then
+        validation_results=$(validate_binary "$output_name" "$GOOS" "$GOARCH")
+        local validation_status=$?
+
+        if [[ "${validation_status}" -ne 0 ]] && [[ "${VALIDATE_STRICT}" == true ]]; then
+            log_error "Build aborted due to validation failure (--validate-strict)"
+            BUILD_SUMMARY+=("FAIL|${GOOS}/${GOARCH}|${file_size}|${formatted_duration}|${file_size_bytes}||${validation_results}")
+            return 1
+        fi
+    fi
+
     # Generate checksum if requested
     local checksum=""
     if [[ "$CHECKSUMS" == true ]]; then
@@ -416,7 +585,7 @@ build_platform() {
     fi
 
     log_success "✓ Built ${output_name} (${file_size}, ${formatted_duration})"
-    BUILD_SUMMARY+=("OK|${GOOS}/${GOARCH}|${file_size}|${formatted_duration}|${file_size_bytes}|${checksum}")
+    BUILD_SUMMARY+=("OK|${GOOS}/${GOARCH}|${file_size}|${formatted_duration}|${file_size_bytes}|${checksum}|${validation_results}")
     return 0
 }
 
@@ -472,7 +641,7 @@ if [[ "$QUIET" == false ]] && [[ ${#BUILD_SUMMARY[@]} -gt 0 ]]; then
     echo "─────────────────────────────────────────────────"
 
     for entry in "${BUILD_SUMMARY[@]}"; do
-        IFS='|' read -r status platform size time size_bytes checksum <<< "$entry"
+        IFS='|' read -r status platform size time size_bytes checksum validation <<< "$entry"
         case $status in
             OK)
                 printf "${COLOR_GREEN}%-6s${COLOR_RESET} %-20s %-10s %-10s\n" "✓" "$platform" "$size" "$time"
@@ -519,7 +688,7 @@ EOF
     # Add build entries
     local first=true
     for entry in "${BUILD_SUMMARY[@]}"; do
-        IFS='|' read -r status platform size time size_bytes checksum <<< "$entry"
+        IFS='|' read -r status platform size time size_bytes checksum validation <<< "$entry"
 
         if [[ "$first" == false ]]; then
             echo "    ," >> "$manifest_file"
@@ -534,6 +703,20 @@ EOF
             binary_name+='.exe'
         fi
 
+        # Parse validation results if present
+        local val_format="null"
+        local val_arch="null"
+        local val_exec="null"
+        local val_size="null"
+
+        if [[ "${validation}" != "not_validated" ]] && [[ -n "${validation}" ]]; then
+            # Parse format:pass,arch:pass,executable:pass,size:warn
+            val_format=$(echo "${validation}" | grep -oP 'format:\K[^,]+' || echo "null")
+            val_arch=$(echo "${validation}" | grep -oP 'arch:\K[^,]+' || echo "null")
+            val_exec=$(echo "${validation}" | grep -oP 'executable:\K[^,]+' || echo "null")
+            val_size=$(echo "${validation}" | grep -oP 'size:\K[^,]+' || echo "null")
+        fi
+
         cat >> "$manifest_file" << EOF
     {
       "platform": "${platform}",
@@ -544,7 +727,13 @@ EOF
       "size": "${size}",
       "size_bytes": ${size_bytes:-0},
       "build_time": "${time}",
-      "sha256": "${checksum:-}"
+      "sha256": "${checksum:-}",
+      "validation": {
+        "format": "${val_format}",
+        "architecture": "${val_arch}",
+        "executable": "${val_exec}",
+        "size_check": "${val_size}"
+      }
     }
 EOF
     done
