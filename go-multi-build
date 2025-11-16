@@ -10,6 +10,8 @@ COMPRESS=false
 DRY_RUN=false
 CUSTOM_LDFLAGS='-extldflags "-static"'
 CONFIG_FILE="go-multi-build.conf"
+INCREMENTAL=false
+EMBED_VERSION=false
 
 # Help function
 show_help() {
@@ -26,6 +28,8 @@ OPTIONS:
     -c, --compress          Compress binaries (requires upx)
     -d, --dry-run           Show what would be built without building
     -l, --ldflags FLAGS     Custom ldflags for go build (default: '-extldflags "-static"')
+    -i, --incremental       Skip platforms that have already been built
+    -v, --version           Embed version info from git (tag, commit, date)
 
 CONFIGURATION:
     Platforms can be configured via (in order of precedence):
@@ -83,6 +87,14 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_LDFLAGS="$2"
             shift 2
             ;;
+        -i|--incremental)
+            INCREMENTAL=true
+            shift
+            ;;
+        -v|--version)
+            EMBED_VERSION=true
+            shift
+            ;;
         -*)
             echo "Error: Unknown option $1"
             echo "Use -h or --help for usage information"
@@ -111,6 +123,20 @@ if [[ -z ${package_split} ]]; then
 else
     # otherwise - remote package and we need the last element of the array.
     package_name=${package_split[${#package_split[@]}-1]}
+fi
+
+# Extract version information from git if requested
+if [[ "$EMBED_VERSION" == true ]]; then
+    if command -v git &> /dev/null && git rev-parse --git-dir &> /dev/null 2>&1; then
+        GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+        GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        VERSION_LDFLAGS="-X main.Version=${GIT_TAG} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}"
+        CUSTOM_LDFLAGS="${VERSION_LDFLAGS} ${CUSTOM_LDFLAGS}"
+        echo "Version info: ${GIT_TAG} (${GIT_COMMIT}) built on ${BUILD_DATE}"
+    else
+        echo "Warning: Git not available or not a git repository, skipping version embedding"
+    fi
 fi
 
 # Load configuration from config file if it exists
@@ -166,6 +192,16 @@ if [[ "$DRY_RUN" == true ]]; then
     exit 0
 fi
 
+# Format duration in human-readable format
+format_duration() {
+    local seconds=$1
+    if (( seconds < 60 )); then
+        printf "%.2fs" "$seconds"
+    else
+        printf "%dm %.2fs" $((seconds / 60)) $(echo "$seconds % 60" | bc)
+    fi
+}
+
 # Build function
 build_platform() {
     local platform=$1
@@ -179,6 +215,14 @@ build_platform() {
         output_name+='.exe'
     fi
 
+    # Check if incremental build and binary already exists
+    if [[ "$INCREMENTAL" == true ]] && [[ -f "$output_name" ]]; then
+        local file_size=$(du -h "$output_name" | cut -f1)
+        echo "⊙ Skipped ${GOOS}/${GOARCH} (already exists, ${file_size})"
+        return 0
+    fi
+
+    local start_time=$(date +%s.%N)
     echo "Building ${package} for ${GOOS}/${GOARCH}..."
     CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags "$CUSTOM_LDFLAGS" -o "${output_name}" .
 
@@ -187,17 +231,25 @@ build_platform() {
         return 1
     fi
 
+    local end_time=$(date +%s.%N)
+    local duration=$(echo "$end_time - $start_time" | bc)
+
     # Compress if requested
     if [[ "$COMPRESS" == true ]]; then
         echo "Compressing ${output_name}..."
         upx -q "${output_name}" 2>/dev/null || echo "Warning: Compression failed for ${output_name}"
     fi
 
-    echo "✓ Built ${output_name}"
+    # Get file size
+    local file_size=$(du -h "$output_name" | cut -f1)
+    local formatted_duration=$(format_duration "$duration")
+    echo "✓ Built ${output_name} (${file_size}, ${formatted_duration})"
     return 0
 }
 
 # Build platforms
+total_start_time=$(date +%s.%N)
+
 if [[ "$PARALLEL" == true ]]; then
     echo "Building platforms in parallel..."
     pids=()
@@ -231,5 +283,9 @@ else
     done
 fi
 
+total_end_time=$(date +%s.%N)
+total_duration=$(echo "$total_end_time - $total_start_time" | bc)
+formatted_total=$(format_duration "$total_duration")
+
 echo ""
-echo "✓ All builds completed successfully"
+echo "✓ All builds completed successfully in ${formatted_total}"

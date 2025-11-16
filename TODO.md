@@ -19,9 +19,9 @@
 ### Build Improvements
 - [x] Implement parallel builds for faster compilation
 - [x] Organize output into directories (e.g., `build/linux-amd64/`)
-- [ ] Embed version information using git tags/commits
-- [ ] Add incremental builds (skip already-built platforms)
-- [ ] Add build time tracking and display
+- [x] Embed version information using git tags/commits
+- [x] Add incremental builds (skip already-built platforms)
+- [x] Add build time tracking and display
 
 ### Output Artifacts
 - [ ] Generate SHA256 checksums for each binary
