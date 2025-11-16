@@ -24,10 +24,10 @@
 - [x] Add build time tracking and display
 
 ### Output Artifacts
-- [ ] Generate SHA256 checksums for each binary
-- [ ] Create release archives (`.tar.gz`, `.zip`)
-- [ ] Generate build manifest file
-- [ ] Add option to strip debug symbols (`-ldflags "-s -w"`)
+- [x] Generate SHA256 checksums for each binary
+- [x] Create release archives (`.tar.gz`, `.zip`)
+- [x] Generate build manifest file
+- [x] Add option to strip debug symbols (`-ldflags "-s -w"`)
 - [x] Optional UPX compression
 
 ### User Experience
