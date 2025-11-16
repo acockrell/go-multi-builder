@@ -12,6 +12,21 @@ CUSTOM_LDFLAGS='-extldflags "-static"'
 CONFIG_FILE="go-multi-build.conf"
 INCREMENTAL=false
 EMBED_VERSION=false
+VERBOSE=false
+QUIET=false
+CLEANUP=false
+NO_COLOR=false
+
+# Color codes (if colors are enabled)
+COLOR_RED='\033[0;31m'
+COLOR_GREEN='\033[0;32m'
+COLOR_YELLOW='\033[0;33m'
+COLOR_BLUE='\033[0;34m'
+COLOR_CYAN='\033[0;36m'
+COLOR_RESET='\033[0m'
+
+# Build summary tracking
+declare -a BUILD_SUMMARY
 
 # Help function
 show_help() {
@@ -30,6 +45,10 @@ OPTIONS:
     -l, --ldflags FLAGS     Custom ldflags for go build (default: '-extldflags "-static"')
     -i, --incremental       Skip platforms that have already been built
     -v, --version           Embed version info from git (tag, commit, date)
+    -V, --verbose           Verbose output (show all build details)
+    -q, --quiet             Quiet mode (minimal output)
+    --cleanup               Remove all previously built binaries before building
+    --no-color              Disable colored output
 
 CONFIGURATION:
     Platforms can be configured via (in order of precedence):
@@ -95,6 +114,22 @@ while [[ $# -gt 0 ]]; do
             EMBED_VERSION=true
             shift
             ;;
+        -V|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -q|--quiet)
+            QUIET=true
+            shift
+            ;;
+        --cleanup)
+            CLEANUP=true
+            shift
+            ;;
+        --no-color)
+            NO_COLOR=true
+            shift
+            ;;
         -*)
             echo "Error: Unknown option $1"
             echo "Use -h or --help for usage information"
@@ -107,12 +142,70 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate package name
-if [[ -z "$package" ]]; then
-    echo "Error: package name required"
-    echo "Usage: $(basename "$0") [OPTIONS] <package-name>"
-    echo "Use -h or --help for more information"
+# Disable colors if requested or not in a terminal
+if [[ "$NO_COLOR" == true ]] || [[ ! -t 1 ]]; then
+    COLOR_RED=''
+    COLOR_GREEN=''
+    COLOR_YELLOW=''
+    COLOR_BLUE=''
+    COLOR_CYAN=''
+    COLOR_RESET=''
+fi
+
+# Logging functions
+log_info() {
+    [[ "$QUIET" == true ]] || echo -e "${COLOR_CYAN}$1${COLOR_RESET}"
+}
+
+log_success() {
+    [[ "$QUIET" == true ]] || echo -e "${COLOR_GREEN}$1${COLOR_RESET}"
+}
+
+log_warning() {
+    echo -e "${COLOR_YELLOW}$1${COLOR_RESET}" >&2
+}
+
+log_error() {
+    echo -e "${COLOR_RED}$1${COLOR_RESET}" >&2
+}
+
+log_verbose() {
+    [[ "$VERBOSE" == true ]] && echo -e "${COLOR_BLUE}[VERBOSE]${COLOR_RESET} $1"
+}
+
+# Validate Go installation
+if ! command -v go &> /dev/null; then
+    log_error "Error: Go is not installed or not in PATH"
+    log_error "Please install Go from https://golang.org/dl/"
     exit 1
+fi
+
+log_verbose "Go version: $(go version)"
+
+# Auto-detect package name from go.mod if not provided
+if [[ -z "$package" ]]; then
+    if [[ -f "go.mod" ]]; then
+        package=$(grep '^module' go.mod | awk '{print $2}')
+        if [[ -n "$package" ]]; then
+            log_info "Auto-detected package from go.mod: $package"
+        else
+            log_error "Error: Could not auto-detect package name from go.mod"
+            echo "Usage: $(basename "$0") [OPTIONS] <package-name>"
+            echo "Use -h or --help for more information"
+            exit 1
+        fi
+    else
+        log_error "Error: package name required and no go.mod found"
+        echo "Usage: $(basename "$0") [OPTIONS] <package-name>"
+        echo "Use -h or --help for more information"
+        exit 1
+    fi
+fi
+
+# Validate that we're in a Go project directory
+if [[ ! -f "go.mod" ]]; then
+    log_warning "Warning: go.mod not found in current directory"
+    log_warning "This might not be a Go module. Builds may fail."
 fi
 
 # Determine package name
@@ -133,9 +226,9 @@ if [[ "$EMBED_VERSION" == true ]]; then
         BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         VERSION_LDFLAGS="-X main.Version=${GIT_TAG} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}"
         CUSTOM_LDFLAGS="${VERSION_LDFLAGS} ${CUSTOM_LDFLAGS}"
-        echo "Version info: ${GIT_TAG} (${GIT_COMMIT}) built on ${BUILD_DATE}"
+        log_info "Version info: ${GIT_TAG} (${GIT_COMMIT}) built on ${BUILD_DATE}"
     else
-        echo "Warning: Git not available or not a git repository, skipping version embedding"
+        log_warning "Warning: Git not available or not a git repository, skipping version embedding"
     fi
 fi
 
@@ -159,13 +252,33 @@ fi
 
 # Validate compress option
 if [[ "$COMPRESS" == true ]] && ! command -v upx &> /dev/null; then
-    echo "Warning: upx not found, compression will be skipped"
+    log_warning "Warning: upx not found, compression will be skipped"
     COMPRESS=false
 fi
 
 # Create output directory if it doesn't exist
 if [[ "$OUTPUT_DIR" != "." ]] && [[ "$DRY_RUN" == false ]]; then
     mkdir -p "$OUTPUT_DIR"
+    log_verbose "Created output directory: $OUTPUT_DIR"
+fi
+
+# Cleanup old builds if requested
+if [[ "$CLEANUP" == true ]]; then
+    log_info "Cleaning up old builds..."
+    for platform in "${platforms[@]}"; do
+        platform_split=(${platform//\// })
+        GOOS=${platform_split[0]}
+        GOARCH=${platform_split[1]}
+        output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
+        if [ "$GOOS" = "windows" ]; then
+            output_name+='.exe'
+        fi
+        if [[ -f "$output_name" ]]; then
+            rm -f "$output_name"
+            log_verbose "Removed: $output_name"
+        fi
+    done
+    log_success "✓ Cleanup complete"
 fi
 
 # Show configuration in dry-run mode
@@ -218,16 +331,25 @@ build_platform() {
     # Check if incremental build and binary already exists
     if [[ "$INCREMENTAL" == true ]] && [[ -f "$output_name" ]]; then
         local file_size=$(du -h "$output_name" | cut -f1)
-        echo "⊙ Skipped ${GOOS}/${GOARCH} (already exists, ${file_size})"
+        log_info "⊙ Skipped ${GOOS}/${GOARCH} (already exists, ${file_size})"
+        BUILD_SUMMARY+=("SKIP|${GOOS}/${GOARCH}|${file_size}|0.00s")
         return 0
     fi
 
     local start_time=$(date +%s.%N)
-    echo "Building ${package} for ${GOOS}/${GOARCH}..."
-    CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags "$CUSTOM_LDFLAGS" -o "${output_name}" .
+    log_info "Building ${package} for ${GOOS}/${GOARCH}..."
 
-    if [ $? -ne 0 ]; then
-        echo "Error: Build failed for ${GOOS}/${GOARCH}"
+    if [[ "$VERBOSE" == true ]]; then
+        CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags "$CUSTOM_LDFLAGS" -o "${output_name}" .
+        local build_result=$?
+    else
+        CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags "$CUSTOM_LDFLAGS" -o "${output_name}" . 2>&1 | grep -v "^#" || true
+        local build_result=${PIPESTATUS[0]}
+    fi
+
+    if [ $build_result -ne 0 ]; then
+        log_error "Error: Build failed for ${GOOS}/${GOARCH}"
+        BUILD_SUMMARY+=("FAIL|${GOOS}/${GOARCH}|N/A|N/A")
         return 1
     fi
 
@@ -236,14 +358,15 @@ build_platform() {
 
     # Compress if requested
     if [[ "$COMPRESS" == true ]]; then
-        echo "Compressing ${output_name}..."
-        upx -q "${output_name}" 2>/dev/null || echo "Warning: Compression failed for ${output_name}"
+        log_verbose "Compressing ${output_name}..."
+        upx -q "${output_name}" 2>/dev/null || log_warning "Warning: Compression failed for ${output_name}"
     fi
 
     # Get file size
     local file_size=$(du -h "$output_name" | cut -f1)
     local formatted_duration=$(format_duration "$duration")
-    echo "✓ Built ${output_name} (${file_size}, ${formatted_duration})"
+    log_success "✓ Built ${output_name} (${file_size}, ${formatted_duration})"
+    BUILD_SUMMARY+=("OK|${GOOS}/${GOARCH}|${file_size}|${formatted_duration}")
     return 0
 }
 
@@ -288,4 +411,31 @@ total_duration=$(echo "$total_end_time - $total_start_time" | bc)
 formatted_total=$(format_duration "$total_duration")
 
 echo ""
-echo "✓ All builds completed successfully in ${formatted_total}"
+log_success "✓ All builds completed successfully in ${formatted_total}"
+
+# Show build summary table
+if [[ "$QUIET" == false ]] && [[ ${#BUILD_SUMMARY[@]} -gt 0 ]]; then
+    echo ""
+    echo "Build Summary:"
+    echo "─────────────────────────────────────────────────"
+    printf "%-6s %-20s %-10s %-10s\n" "Status" "Platform" "Size" "Time"
+    echo "─────────────────────────────────────────────────"
+
+    for entry in "${BUILD_SUMMARY[@]}"; do
+        IFS='|' read -r status platform size time <<< "$entry"
+        case $status in
+            OK)
+                printf "${COLOR_GREEN}%-6s${COLOR_RESET} %-20s %-10s %-10s\n" "✓" "$platform" "$size" "$time"
+                ;;
+            SKIP)
+                printf "${COLOR_YELLOW}%-6s${COLOR_RESET} %-20s %-10s %-10s\n" "⊙" "$platform" "$size" "$time"
+                ;;
+            FAIL)
+                printf "${COLOR_RED}%-6s${COLOR_RESET} %-20s %-10s %-10s\n" "✗" "$platform" "$size" "$time"
+                ;;
+        esac
+    done
+
+    echo "─────────────────────────────────────────────────"
+    echo "Total time: ${formatted_total}"
+fi

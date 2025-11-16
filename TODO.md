@@ -31,12 +31,12 @@
 - [x] Optional UPX compression
 
 ### User Experience
-- [ ] Auto-detect package name from `go.mod` if not provided
-- [ ] Validate Go installation and project directory
-- [ ] Add color output for success/failure
-- [ ] Show build summary table (platforms, sizes, times)
-- [ ] Add verbose/quiet modes
-- [ ] Add cleanup option for old builds
+- [x] Auto-detect package name from `go.mod` if not provided
+- [x] Validate Go installation and project directory
+- [x] Add color output for success/failure
+- [x] Show build summary table (platforms, sizes, times)
+- [x] Add verbose/quiet modes
+- [x] Add cleanup option for old builds
 
 ## Code Quality
 
