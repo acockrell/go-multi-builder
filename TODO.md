@@ -50,4 +50,3 @@
 - [ ] Cross-compilation validation
 - [ ] Integration with goreleaser-style configuration
 - [ ] Custom binary naming patterns
-- [ ] Verify binaries are executable after building

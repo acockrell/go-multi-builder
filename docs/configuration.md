@@ -176,6 +176,73 @@ CUSTOM_LDFLAGS='-s -w -extldflags "-static"'
 
 **Note**: If `EMBED_VERSION=true`, version flags are prepended automatically
 
+### STRIP
+
+**Type**: Boolean (`true` or `false`)
+**Default**: `false`
+**Description**: Strip debug symbols from binaries
+
+```bash
+STRIP=true
+```
+
+**Effect**:
+- Automatically adds `-s -w` to ldflags
+- Reduces binary size by 30-50%
+- Production-ready binaries
+
+### CHECKSUMS
+
+**Type**: Boolean (`true` or `false`)
+**Default**: `false`
+**Description**: Generate SHA256 checksum files
+
+```bash
+CHECKSUMS=true
+```
+
+**Output**:
+- Creates `.sha256` file for each binary
+- Format: `<checksum>  <filename>`
+
+**Use cases**:
+- Verify downloads
+- Security compliance
+- Release integrity
+
+### ARCHIVE
+
+**Type**: Boolean (`true` or `false`)
+**Default**: `false`
+**Description**: Create release archives
+
+```bash
+ARCHIVE=true
+```
+
+**Output**:
+- `.tar.gz` for Unix (Linux, macOS, BSD)
+- `.zip` for Windows
+
+**Use cases**:
+- Distribution packages
+- Release artifacts
+
+### MANIFEST
+
+**Type**: Boolean (`true` or `false`)
+**Default**: `false`
+**Description**: Generate build manifest JSON
+
+```bash
+MANIFEST=true
+```
+
+**Output**:
+- Creates `build-manifest.json`
+- Includes all build metadata
+- Useful for CI/CD tracking
+
 ### VERBOSE
 
 **Type**: Boolean (`true` or `false`)
@@ -303,7 +370,7 @@ CONFIG_FILE=dev.conf ./go-multi-build
 
 ### Production Release Configuration
 
-Optimized binaries for all major platforms:
+Optimized binaries for all major platforms with full artifacts:
 
 ```bash
 # release.conf
@@ -311,15 +378,24 @@ PLATFORMS="linux/386,linux/amd64,linux/arm,linux/arm64,darwin/amd64,darwin/arm64
 OUTPUT_DIR="./release"
 PARALLEL=true
 COMPRESS=true
+STRIP=true
 EMBED_VERSION=true
+CHECKSUMS=true
+ARCHIVE=true
+MANIFEST=true
 CLEANUP=true
-CUSTOM_LDFLAGS='-s -w -extldflags "-static"'
 ```
 
 Usage:
 ```bash
 CONFIG_FILE=release.conf ./go-multi-build
 ```
+
+This creates:
+- Stripped, compressed binaries
+- SHA256 checksum files
+- Release archives (.tar.gz/.zip)
+- Build manifest JSON
 
 ### CI/CD Configuration
 

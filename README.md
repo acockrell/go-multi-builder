@@ -83,11 +83,15 @@ A powerful Bash script for building Go projects across multiple platforms in a s
 | `-v, --version` | Embed git version info (tag, commit, date) |
 | `-i, --incremental` | Skip already-built platforms |
 | `-c, --compress` | Compress binaries with UPX |
+| `-s, --strip` | Strip debug symbols (smaller binaries) |
 | `-l, --ldflags FLAGS` | Custom ldflags for go build |
 | `-V, --verbose` | Verbose output |
 | `-q, --quiet` | Quiet mode (minimal output) |
 | `-d, --dry-run` | Preview what would be built |
 | `--cleanup` | Remove old builds before building |
+| `--checksums` | Generate SHA256 checksum files |
+| `--archive` | Create release archives (.tar.gz/.zip) |
+| `--manifest` | Generate build manifest JSON file |
 | `--no-color` | Disable colored output |
 
 ## Configuration

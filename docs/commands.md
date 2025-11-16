@@ -168,6 +168,35 @@ Custom ldflags for go build
 
 **Note**: Version flags are prepended automatically when using `-v`
 
+#### `-s`, `--strip`
+
+Strip debug symbols from binaries
+
+**Type**: Boolean flag (no argument)
+**Default**: Debug symbols included
+
+```bash
+./go-multi-build -s
+./go-multi-build --strip
+```
+
+**Effect**:
+- Adds `-s -w` to ldflags automatically
+- `-s` strips symbol table
+- `-w` strips DWARF debugging information
+- Reduces binary size by 30-50%
+- Cannot use debugger on stripped binaries
+
+**Recommended for**:
+- Production releases
+- When binary size matters
+- Distribution to end users
+
+**Not recommended for**:
+- Development builds
+- When debugging is needed
+- Troubleshooting crashes
+
 ---
 
 ### Optimization Options
@@ -319,6 +348,116 @@ Disable colored output
 
 ---
 
+### Artifact Generation
+
+#### `--checksums`
+
+Generate SHA256 checksum files for each binary
+
+**Type**: Boolean flag (no argument)
+**Default**: No checksums generated
+
+```bash
+./go-multi-build --checksums
+```
+
+**Output**:
+- Creates `.sha256` file for each binary
+- Format: `<checksum>  <filename>`
+- Example: `myapp-linux-amd64.sha256`
+
+**Use cases**:
+- Verify download integrity
+- Detect file corruption
+- Security compliance
+- Release verification
+
+#### `--archive`
+
+Create release archives for binaries
+
+**Type**: Boolean flag (no argument)
+**Default**: No archives created
+
+```bash
+./go-multi-build --archive
+```
+
+**Output**:
+- `.tar.gz` for Unix platforms (Linux, macOS, BSD)
+- `.zip` for Windows platforms
+- Archives contain the binary
+
+**Examples**:
+- `myapp-linux-amd64.tar.gz`
+- `myapp-windows-amd64.exe.zip`
+
+**Use cases**:
+- Distribution packages
+- Release artifacts
+- Easy downloads
+- Organized deployments
+
+#### `--manifest`
+
+Generate build manifest JSON file
+
+**Type**: Boolean flag (no argument)
+**Default**: No manifest generated
+
+```bash
+./go-multi-build --manifest
+```
+
+**Output**:
+- Creates `build-manifest.json` in output directory
+- Contains complete build metadata
+
+**Manifest includes**:
+- Build date and total time
+- Package name and git information
+- Array of all builds with:
+  - Platform (GOOS/GOARCH)
+  - Status (OK/SKIP/FAIL)
+  - Binary filename
+  - File size (human and bytes)
+  - Build time
+  - SHA256 checksum (if --checksums used)
+
+**Example manifest**:
+```json
+{
+  "build_date": "2025-11-15T12:34:56Z",
+  "build_time": "7.23s",
+  "package": "github.com/user/myapp",
+  "package_name": "myapp",
+  "git_tag": "v1.2.3",
+  "git_commit": "a1b2c3d...",
+  "output_dir": "./build",
+  "builds": [
+    {
+      "platform": "linux/amd64",
+      "goos": "linux",
+      "goarch": "amd64",
+      "status": "OK",
+      "binary": "myapp-linux-amd64",
+      "size": "8.2M",
+      "size_bytes": 8601234,
+      "build_time": "3.45s",
+      "sha256": "a1b2c3d..."
+    }
+  ]
+}
+```
+
+**Use cases**:
+- Build automation tracking
+- Release documentation
+- CI/CD integration
+- Audit trails
+
+---
+
 ### Utility Options
 
 #### `-d`, `--dry-run`
@@ -381,11 +520,15 @@ Remove old binaries before building
 
 #### Production Release
 ```bash
-./go-multi-build -P -v -c --cleanup -o release
+./go-multi-build -P -v -s -c --checksums --archive --manifest --cleanup -o release
 ```
 - Parallel (fast)
 - Version embedded
-- Compressed
+- Stripped symbols (small)
+- Compressed (smaller)
+- Checksums generated
+- Archives created
+- Manifest file
 - Clean build
 - Output to `release/`
 
