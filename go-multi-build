@@ -22,6 +22,7 @@ ARCHIVE=false
 MANIFEST=false
 VALIDATE=false
 VALIDATE_STRICT=false
+BINARY_NAME_PATTERN="{name}-{os}-{arch}"
 
 # Color codes (if colors are enabled)
 COLOR_RED='\033[0;31m'
@@ -54,6 +55,8 @@ OPTIONS:
     -V, --verbose           Verbose output (show all build details)
     -q, --quiet             Quiet mode (minimal output)
     -s, --strip             Strip debug symbols (adds -s -w to ldflags)
+    --name-pattern PATTERN  Custom binary naming pattern (default: "{name}-{os}-{arch}")
+                            Variables: {name}, {os}, {arch}, {version}, {commit}, {date}, {time}
     --checksums             Generate SHA256 checksums for binaries
     --archive               Create release archives (.tar.gz for Unix, .zip for Windows)
     --manifest              Generate build manifest file (JSON)
@@ -167,6 +170,10 @@ while [[ $# -gt 0 ]]; do
             VALIDATE_STRICT=true
             shift
             ;;
+        --name-pattern|--binary-pattern)
+            BINARY_NAME_PATTERN="$2"
+            shift 2
+            ;;
         -*)
             echo "Error: Unknown option $1"
             echo "Use -h or --help for usage information"
@@ -248,6 +255,11 @@ fi
 # Determine package name (extract last component from path)
 package_name=$(basename "${package}")
 
+# Validate name pattern
+if ! validate_name_pattern "$BINARY_NAME_PATTERN"; then
+    exit 1
+fi
+
 # Extract version information from git if requested
 if [[ "$EMBED_VERSION" == true ]]; then
     if command -v git &> /dev/null && git rev-parse --git-dir &> /dev/null 2>&1; then
@@ -305,14 +317,16 @@ if [[ "$CLEANUP" == true ]]; then
         platform_split=(${platform//\// })
         GOOS=${platform_split[0]}
         GOARCH=${platform_split[1]}
-        output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
-        if [[ "${GOOS}" = "windows" ]]; then
-            output_name+='.exe'
-        fi
+        binary_name=$(expand_binary_name "$BINARY_NAME_PATTERN" "$package_name" "$GOOS" "$GOARCH")
+        output_name="${OUTPUT_DIR}/${binary_name}"
         if [[ -f "${output_name}" ]]; then
             rm -f "$output_name"
             log_verbose "Removed: $output_name"
         fi
+        # Also remove related files (.sha256, .tar.gz, .zip)
+        [[ -f "${output_name}.sha256" ]] && rm -f "${output_name}.sha256"
+        [[ -f "${output_name}.tar.gz" ]] && rm -f "${output_name}.tar.gz"
+        [[ -f "${output_name}.zip" ]] && rm -f "${output_name}.zip"
     done
     log_success "✓ Cleanup complete"
 fi
@@ -323,6 +337,7 @@ if [[ "$DRY_RUN" == true ]]; then
     echo "Package: $package"
     echo "Package name: $package_name"
     echo "Output directory: $OUTPUT_DIR"
+    echo "Binary name pattern: $BINARY_NAME_PATTERN"
     echo "Parallel: $PARALLEL"
     echo "Compress: $COMPRESS"
     echo "Custom ldflags: $CUSTOM_LDFLAGS"
@@ -332,10 +347,8 @@ if [[ "$DRY_RUN" == true ]]; then
         platform_split=(${platform//\// })
         GOOS=${platform_split[0]}
         GOARCH=${platform_split[1]}
-        output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
-        if [[ "${GOOS}" = "windows" ]]; then
-            output_name+='.exe'
-        fi
+        binary_name=$(expand_binary_name "$BINARY_NAME_PATTERN" "$package_name" "$GOOS" "$GOARCH")
+        output_name="${OUTPUT_DIR}/${binary_name}"
         echo "  - ${GOOS}/${GOARCH} -> ${output_name}"
     done
     exit 0
@@ -349,6 +362,71 @@ format_duration() {
     else
         printf "%dm %.2fs" $((seconds / 60)) $(echo "$seconds % 60" | bc)
     fi
+}
+
+# Expand binary name pattern with actual values
+expand_binary_name() {
+    local pattern="$1"
+    local pkg_name="$2"
+    local goos="$3"
+    local goarch="$4"
+    local result="$pattern"
+
+    # Get version info if pattern uses these variables
+    local version=""
+    local commit=""
+    local build_date=""
+    local build_time=""
+
+    if [[ "$pattern" =~ \{version\}|\{commit\}|\{date\}|\{time\} ]]; then
+        if command -v git &> /dev/null && git rev-parse --git-dir &> /dev/null 2>&1; then
+            version=$(git describe --tags --always 2>/dev/null || echo "dev")
+            commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        else
+            version="dev"
+            commit="unknown"
+        fi
+        build_date=$(date -u +%Y%m%d)
+        build_time=$(date -u +%H%M%S)
+    fi
+
+    # Replace all placeholders
+    result="${result//\{name\}/$pkg_name}"
+    result="${result//\{package\}/$pkg_name}"
+    result="${result//\{os\}/$goos}"
+    result="${result//\{goos\}/$goos}"
+    result="${result//\{arch\}/$goarch}"
+    result="${result//\{goarch\}/$goarch}"
+    result="${result//\{version\}/$version}"
+    result="${result//\{commit\}/$commit}"
+    result="${result//\{date\}/$build_date}"
+    result="${result//\{time\}/$build_time}"
+
+    # Add .exe for Windows if not already present
+    if [[ "$goos" == "windows" ]] && [[ ! "$result" =~ \.exe$ ]]; then
+        result="${result}.exe"
+    fi
+
+    echo "$result"
+}
+
+# Validate name pattern
+validate_name_pattern() {
+    local pattern="$1"
+
+    # Warn if pattern doesn't include {os} or {arch} (builds might overwrite each other)
+    if [[ ! "$pattern" =~ \{os\}|\{goos\} ]] && [[ ! "$pattern" =~ \{arch\}|\{goarch\} ]]; then
+        log_warning "Warning: Pattern doesn't include {os} or {arch} - builds may overwrite each other"
+        log_warning "         Consider using different output directories per platform or include platform variables"
+    fi
+
+    # Check for invalid filename characters (common across platforms)
+    if [[ "$pattern" =~ [\:\*\?\"\<\>\|] ]]; then
+        log_error "Error: Pattern contains invalid filename characters: : * ? \" < > |"
+        return 1
+    fi
+
+    return 0
 }
 
 # Validate binary function
@@ -501,11 +579,19 @@ build_platform() {
     local GOOS=${platform_split[0]}
     local GOARCH=${platform_split[1]}
 
-    local output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
+    # Expand the binary name pattern
+    local binary_name
+    binary_name=$(expand_binary_name "$BINARY_NAME_PATTERN" "$package_name" "$GOOS" "$GOARCH")
 
-    if [[ "${GOOS}" = "windows" ]]; then
-        output_name+='.exe'
+    # Handle directory creation if pattern includes subdirectories
+    local binary_dir
+    binary_dir=$(dirname "${OUTPUT_DIR}/${binary_name}")
+    if [[ ! -d "$binary_dir" ]]; then
+        mkdir -p "$binary_dir"
+        log_verbose "Created directory: $binary_dir"
     fi
+
+    local output_name="${OUTPUT_DIR}/${binary_name}"
 
     # Check if incremental build and binary already exists
     if [[ "${INCREMENTAL}" == true ]] && [[ -f "${output_name}" ]]; then
@@ -698,10 +784,8 @@ EOF
         platform_split=(${platform//\// })
         local goos=${platform_split[0]}
         local goarch=${platform_split[1]}
-        local binary_name="${package_name}-${goos}-${goarch}"
-        if [[ "${goos}" = "windows" ]]; then
-            binary_name+='.exe'
-        fi
+        local binary_name
+        binary_name=$(expand_binary_name "$BINARY_NAME_PATTERN" "$package_name" "$goos" "$goarch")
 
         # Parse validation results if present
         local val_format="null"

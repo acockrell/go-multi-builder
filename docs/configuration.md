@@ -86,6 +86,61 @@ OUTPUT_DIR="/tmp/builds"
 - Relative paths are relative to where script is run
 - Use absolute paths for consistency
 
+### BINARY_NAME_PATTERN
+
+**Type**: String (pattern with variables)
+**Default**: `"{name}-{os}-{arch}"`
+**Description**: Custom naming pattern for output binaries
+
+```bash
+BINARY_NAME_PATTERN="{name}-{version}-{os}-{arch}"
+BINARY_NAME_PATTERN="{name}_{date}_{os}_{arch}"
+BINARY_NAME_PATTERN="{os}/{arch}/{name}"
+```
+
+**Available Variables**:
+- `{name}` or `{package}` - Package/binary name
+- `{os}` or `{goos}` - Operating system (linux, darwin, windows, etc.)
+- `{arch}` or `{goarch}` - Architecture (amd64, arm64, 386, arm, etc.)
+- `{version}` - Git tag/version (requires git repository)
+- `{commit}` - Git commit hash (short, requires git repository)
+- `{date}` - Build date in YYYYMMDD format
+- `{time}` - Build time in HHMMSS format (UTC)
+
+**Examples**:
+
+```bash
+# Version in filename
+BINARY_NAME_PATTERN="{name}-{version}-{os}-{arch}"
+# Produces: myapp-v1.2.3-linux-amd64
+
+# Date-based builds
+BINARY_NAME_PATTERN="{name}_{date}_{os}_{arch}"
+# Produces: myapp_20251115_linux_amd64
+
+# Organized by platform (creates subdirectories)
+BINARY_NAME_PATTERN="{os}/{arch}/{name}"
+# Produces: linux/amd64/myapp, darwin/arm64/myapp
+
+# Release naming with commit hash
+BINARY_NAME_PATTERN="{name}-{version}-{os}-{arch}-{commit}"
+# Produces: myapp-v1.2.3-linux-amd64-a1b2c3d
+```
+
+**Notes**:
+- `.exe` extension automatically added for Windows
+- Directory separators (`/`) in pattern create subdirectories
+- Pattern is validated at startup
+- Warning if `{os}` or `{arch}` not included (builds may overwrite)
+- Invalid characters (`: * ? " < > |`) are rejected
+
+**Use cases**:
+- Version-tagged releases
+- Date-stamped nightly builds
+- Organized directory structures
+- CI/CD build numbering
+- Custom naming conventions
+
 ### PARALLEL
 
 **Type**: Boolean (`true` or `false`)

@@ -42,6 +42,39 @@ PLATFORMS="linux/amd64,darwin/amd64,darwin/arm64"
 # OUTPUT_DIR="./bin"
 
 # -----------------------------------------------------------------------------
+# BINARY_NAME_PATTERN - Custom binary naming pattern
+# -----------------------------------------------------------------------------
+# Customize how binary files are named using pattern variables.
+# Default: "{name}-{os}-{arch}" (e.g., myapp-linux-amd64)
+#
+# Available variables:
+#   {name}     - Package/binary name
+#   {os}       - Operating system (linux, darwin, windows, etc.)
+#   {arch}     - Architecture (amd64, arm64, 386, arm, etc.)
+#   {version}  - Git tag/version (requires git repository)
+#   {commit}   - Git commit hash (short)
+#   {date}     - Build date (YYYYMMDD)
+#   {time}     - Build time (HHMMSS, UTC)
+
+# Default pattern
+# BINARY_NAME_PATTERN="{name}-{os}-{arch}"
+
+# Version-tagged releases
+# BINARY_NAME_PATTERN="{name}-{version}-{os}-{arch}"
+
+# Date-stamped nightly builds
+# BINARY_NAME_PATTERN="{name}_{date}_{os}_{arch}"
+
+# Organized by platform (creates subdirectories)
+# BINARY_NAME_PATTERN="{os}/{arch}/{name}"
+
+# Release with version and commit
+# BINARY_NAME_PATTERN="{name}-{version}-{os}-{arch}-{commit}"
+
+# Time-stamped builds
+# BINARY_NAME_PATTERN="{name}_{date}_{time}_{os}_{arch}"
+
+# -----------------------------------------------------------------------------
 # PARALLEL - Enable parallel builds
 # -----------------------------------------------------------------------------
 # Build all platforms simultaneously for faster compilation.

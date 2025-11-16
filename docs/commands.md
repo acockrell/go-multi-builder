@@ -197,6 +197,85 @@ Strip debug symbols from binaries
 - When debugging is needed
 - Troubleshooting crashes
 
+#### `--name-pattern PATTERN`, `--binary-pattern PATTERN`
+
+Custom binary naming pattern
+
+**Type**: String (pattern with variables)
+**Default**: `"{name}-{os}-{arch}"`
+
+```bash
+./go-multi-build --name-pattern "{name}-{version}-{os}-{arch}"
+./go-multi-build --name-pattern "{name}_{date}_{os}_{arch}"
+./go-multi-build --name-pattern "{os}/{arch}/{name}"
+```
+
+**Available Variables**:
+- `{name}` or `{package}` - Package/binary name
+- `{os}` or `{goos}` - Operating system (linux, darwin, windows, etc.)
+- `{arch}` or `{goarch}` - Architecture (amd64, arm64, 386, arm, etc.)
+- `{version}` - Git tag/version (requires git repository)
+- `{commit}` - Git commit hash (short, requires git repository)
+- `{date}` - Build date in YYYYMMDD format
+- `{time}` - Build time in HHMMSS format (UTC)
+
+**Behavior**:
+- Pattern is expanded for each platform build
+- `.exe` extension automatically added for Windows if not in pattern
+- Directory separators (`/`) in pattern create subdirectories
+- Pattern validation warns if {os} or {arch} not included (builds may overwrite)
+
+**Example Patterns**:
+
+```bash
+# Version in filename
+--name-pattern "{name}-{version}-{os}-{arch}"
+# → myapp-v1.2.3-linux-amd64
+
+# Date-based builds
+--name-pattern "{name}_{date}_{os}_{arch}"
+# → myapp_20251115_linux_amd64
+
+# Organized by platform (creates subdirectories)
+--name-pattern "{os}/{arch}/{name}"
+# → linux/amd64/myapp, darwin/arm64/myapp
+
+# Release naming with commit
+--name-pattern "{name}-{version}-{os}-{arch}-{commit}"
+# → myapp-v1.2.3-linux-amd64-a1b2c3d
+
+# Time-stamped builds
+--name-pattern "{name}_{date}_{time}_{os}_{arch}"
+# → myapp_20251115_143022_linux_amd64
+
+# Simple name (warning: requires different output dirs per platform)
+--name-pattern "{name}"
+# → myapp (same for all platforms, will overwrite without --incremental)
+```
+
+**Use cases**:
+- Version-tagged releases
+- Date-stamped nightly builds
+- Organized directory structures by platform
+- CI/CD build numbering
+- Custom naming conventions
+
+**Warnings**:
+- If pattern doesn't include `{os}` or `{arch}`, builds for different platforms will overwrite each other
+- Use different output directories (`-o`) for each platform or include platform variables
+- Special characters (`: * ? " < > |`) are not allowed in patterns
+
+**Example with directory structure**:
+```bash
+# Create platform-specific subdirectories
+./go-multi-build --name-pattern "{os}/{arch}/{name}-{version}" -o dist
+
+# Results in:
+# dist/linux/amd64/myapp-v1.2.3
+# dist/darwin/arm64/myapp-v1.2.3
+# dist/windows/amd64/myapp-v1.2.3.exe
+```
+
 ---
 
 ### Optimization Options

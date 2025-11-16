@@ -85,6 +85,7 @@ A powerful Bash script for building Go projects across multiple platforms in a s
 | `-c, --compress` | Compress binaries with UPX |
 | `-s, --strip` | Strip debug symbols (smaller binaries) |
 | `-l, --ldflags FLAGS` | Custom ldflags for go build |
+| `--name-pattern PATTERN` | Custom binary naming pattern (variables: {name}, {os}, {arch}, {version}, {commit}, {date}, {time}) |
 | `-V, --verbose` | Verbose output |
 | `-q, --quiet` | Quiet mode (minimal output) |
 | `-d, --dry-run` | Preview what would be built |
