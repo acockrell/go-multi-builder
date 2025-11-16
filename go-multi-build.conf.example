@@ -1,0 +1,106 @@
+# go-multi-build Configuration File
+# =================================
+# Copy this file to 'go-multi-build.conf' to use it:
+#   cp go-multi-build.conf.example go-multi-build.conf
+#
+# Settings in this file can be overridden by:
+#   - Environment variables (e.g., GO_BUILD_PLATFORMS)
+#   - Command-line flags (e.g., --platforms)
+
+# -----------------------------------------------------------------------------
+# PLATFORMS - Target operating systems and architectures
+# -----------------------------------------------------------------------------
+# Specify which platforms to build for as comma-separated GOOS/GOARCH pairs.
+# This is the most important setting in this config file.
+
+# Default set (Linux, macOS, Windows - common architectures)
+PLATFORMS="linux/amd64,darwin/amd64,darwin/arm64"
+
+# Extended set (includes ARM and Windows)
+# PLATFORMS="linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64"
+
+# Server-focused set
+# PLATFORMS="linux/amd64,linux/arm64"
+
+# Desktop-focused set
+# PLATFORMS="darwin/amd64,darwin/arm64,windows/amd64,linux/amd64"
+
+# IoT/Embedded set
+# PLATFORMS="linux/arm,linux/arm64,linux/386"
+
+# Complete cross-platform set (might take a while!)
+# PLATFORMS="linux/386,linux/amd64,linux/arm,linux/arm64,darwin/amd64,darwin/arm64,windows/386,windows/amd64,windows/arm64,freebsd/amd64,openbsd/amd64"
+
+# -----------------------------------------------------------------------------
+# OUTPUT_DIR - Where to save compiled binaries
+# -----------------------------------------------------------------------------
+# By default, binaries are created in the current directory.
+# Specify a custom directory to keep things organized.
+
+# OUTPUT_DIR="./build"
+# OUTPUT_DIR="./dist"
+# OUTPUT_DIR="./bin"
+
+# -----------------------------------------------------------------------------
+# PARALLEL - Enable parallel builds
+# -----------------------------------------------------------------------------
+# Build all platforms simultaneously for faster compilation.
+# Recommended for multi-core systems when building multiple platforms.
+
+# PARALLEL=true
+# PARALLEL=false
+
+# -----------------------------------------------------------------------------
+# COMPRESS - Compress binaries with UPX
+# -----------------------------------------------------------------------------
+# Requires UPX (https://upx.github.io/) to be installed.
+# Can significantly reduce binary size but adds build time.
+
+# COMPRESS=true
+# COMPRESS=false
+
+# -----------------------------------------------------------------------------
+# CUSTOM_LDFLAGS - Custom linker flags for go build
+# -----------------------------------------------------------------------------
+# Customize the ldflags passed to 'go build'.
+# Default: '-extldflags "-static"' for static linking
+
+# Default (static linking)
+# CUSTOM_LDFLAGS='-extldflags "-static"'
+
+# Strip debug symbols for smaller binaries
+# CUSTOM_LDFLAGS='-s -w -extldflags "-static"'
+
+# Embed version information (example)
+# CUSTOM_LDFLAGS='-X main.Version=1.0.0 -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -extldflags "-static"'
+
+# Static build without CGO
+# CUSTOM_LDFLAGS='-extldflags "-static"'
+
+# -----------------------------------------------------------------------------
+# EXAMPLE CONFIGURATIONS FOR DIFFERENT USE CASES
+# -----------------------------------------------------------------------------
+
+# Example 1: Fast development builds (single platform, parallel off)
+# PLATFORMS="$(go env GOOS)/$(go env GOARCH)"
+# PARALLEL=false
+# COMPRESS=false
+
+# Example 2: Production release builds (multiple platforms, optimized)
+# PLATFORMS="linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64"
+# OUTPUT_DIR="./dist"
+# PARALLEL=true
+# COMPRESS=true
+# CUSTOM_LDFLAGS='-s -w -extldflags "-static"'
+
+# Example 3: Quick local testing
+# PLATFORMS="linux/amd64,darwin/arm64"
+# OUTPUT_DIR="./build"
+# PARALLEL=true
+
+# Example 4: Comprehensive release (all major platforms)
+# PLATFORMS="linux/386,linux/amd64,linux/arm,linux/arm64,darwin/amd64,darwin/arm64,windows/386,windows/amd64"
+# OUTPUT_DIR="./release"
+# PARALLEL=true
+# COMPRESS=true
+# CUSTOM_LDFLAGS='-s -w -X main.Version=v1.0.0 -extldflags "-static"'

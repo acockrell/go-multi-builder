@@ -1,48 +1,235 @@
 #!/bin/bash
 
-package="${1}"
-
-if [[ -z "$package" ]]; then
-  echo "usage: $0 <package-name>"
-  exit 1
-fi
-
-
 set -eu
 
-package_split=(${package//\// })
-# Test if package_split is empty.  
-if [[ -z ${package_split} ]]; then
-  # if so, just assume that you're building locally
-  package_name=${package}
-else
-  # otherwise - remote package and we need the last element of the array.
-  # Doing this the hard way, because I don't have Bash 4.1
-  # Maximum Effort.
-  package_name=${package_split[${#package_split[@]}-1]}
+# Default configuration
+DEFAULT_PLATFORMS=( "linux/amd64" "darwin/amd64" "darwin/arm64" )
+OUTPUT_DIR="."
+PARALLEL=false
+COMPRESS=false
+DRY_RUN=false
+CUSTOM_LDFLAGS='-extldflags "-static"'
+CONFIG_FILE="go-multi-build.conf"
+
+# Help function
+show_help() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS] <package-name>
+
+Build Go projects for multiple platforms in a single run.
+
+OPTIONS:
+    -h, --help              Show this help message
+    -p, --platforms LIST    Comma-separated list of platforms (e.g., "linux/amd64,darwin/arm64")
+    -o, --output-dir DIR    Output directory for binaries (default: current directory)
+    -P, --parallel          Build platforms in parallel
+    -c, --compress          Compress binaries (requires upx)
+    -d, --dry-run           Show what would be built without building
+    -l, --ldflags FLAGS     Custom ldflags for go build (default: '-extldflags "-static"')
+
+CONFIGURATION:
+    Platforms can be configured via (in order of precedence):
+    1. --platforms flag
+    2. GO_BUILD_PLATFORMS environment variable
+    3. go-multi-build.conf file (PLATFORMS="platform1,platform2,...")
+    4. Default: linux/amd64, darwin/amd64, darwin/arm64
+
+EXAMPLES:
+    # Build with defaults
+    $(basename "$0") myapp
+
+    # Build for specific platforms
+    $(basename "$0") --platforms "linux/amd64,windows/amd64" myapp
+
+    # Build in parallel to custom directory
+    $(basename "$0") -P -o build myapp
+
+    # Dry run to see what would be built
+    $(basename "$0") --dry-run myapp
+
+See README for supported GOOS/GOARCH combinations.
+EOF
+    exit 0
+}
+
+# Parse command-line arguments
+package=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        -p|--platforms)
+            IFS=',' read -ra PLATFORMS_ARG <<< "$2"
+            shift 2
+            ;;
+        -o|--output-dir)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -P|--parallel)
+            PARALLEL=true
+            shift
+            ;;
+        -c|--compress)
+            COMPRESS=true
+            shift
+            ;;
+        -d|--dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -l|--ldflags)
+            CUSTOM_LDFLAGS="$2"
+            shift 2
+            ;;
+        -*)
+            echo "Error: Unknown option $1"
+            echo "Use -h or --help for usage information"
+            exit 1
+            ;;
+        *)
+            package="$1"
+            shift
+            ;;
+    esac
+done
+
+# Validate package name
+if [[ -z "$package" ]]; then
+    echo "Error: package name required"
+    echo "Usage: $(basename "$0") [OPTIONS] <package-name>"
+    echo "Use -h or --help for more information"
+    exit 1
 fi
 
-# Add your platforms here.  See README for further information.
-platforms=( "linux/amd64" "darwin/amd64" "darwin/arm64" )
+# Determine package name
+package_split=(${package//\// })
+if [[ -z ${package_split} ]]; then
+    # if so, just assume that you're building locally
+    package_name=${package}
+else
+    # otherwise - remote package and we need the last element of the array.
+    package_name=${package_split[${#package_split[@]}-1]}
+fi
 
-for platform in "${platforms[@]}"
-do
+# Load configuration from config file if it exists
+if [[ -f "$CONFIG_FILE" ]]; then
+    # Source config file
+    source "$CONFIG_FILE"
+fi
+
+# Determine platforms (order of precedence: CLI > env var > config file > default)
+if [[ -n "${PLATFORMS_ARG+x}" ]]; then
+    platforms=("${PLATFORMS_ARG[@]}")
+elif [[ -n "${GO_BUILD_PLATFORMS}" ]]; then
+    IFS=',' read -ra platforms <<< "$GO_BUILD_PLATFORMS"
+elif [[ -n "${PLATFORMS+x}" ]]; then
+    # From config file
+    IFS=',' read -ra platforms <<< "$PLATFORMS"
+else
+    platforms=("${DEFAULT_PLATFORMS[@]}")
+fi
+
+# Validate compress option
+if [[ "$COMPRESS" == true ]] && ! command -v upx &> /dev/null; then
+    echo "Warning: upx not found, compression will be skipped"
+    COMPRESS=false
+fi
+
+# Create output directory if it doesn't exist
+if [[ "$OUTPUT_DIR" != "." ]] && [[ "$DRY_RUN" == false ]]; then
+    mkdir -p "$OUTPUT_DIR"
+fi
+
+# Show configuration in dry-run mode
+if [[ "$DRY_RUN" == true ]]; then
+    echo "=== Dry Run Mode ==="
+    echo "Package: $package"
+    echo "Package name: $package_name"
+    echo "Output directory: $OUTPUT_DIR"
+    echo "Parallel: $PARALLEL"
+    echo "Compress: $COMPRESS"
+    echo "Custom ldflags: $CUSTOM_LDFLAGS"
+    echo ""
+    echo "Platforms to build:"
+    for platform in "${platforms[@]}"; do
+        platform_split=(${platform//\// })
+        GOOS=${platform_split[0]}
+        GOARCH=${platform_split[1]}
+        output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
+        if [ "$GOOS" = "windows" ]; then
+            output_name+='.exe'
+        fi
+        echo "  - ${GOOS}/${GOARCH} -> ${output_name}"
+    done
+    exit 0
+fi
+
+# Build function
+build_platform() {
+    local platform=$1
     platform_split=(${platform//\// })
-    GOOS=${platform_split[0]}
-    GOARCH=${platform_split[1]}
+    local GOOS=${platform_split[0]}
+    local GOARCH=${platform_split[1]}
 
-    output_name=$package_name'-'$GOOS'-'$GOARCH
+    local output_name="${OUTPUT_DIR}/${package_name}-${GOOS}-${GOARCH}"
 
-    if [ $GOOS = "windows" ]; then
+    if [ "$GOOS" = "windows" ]; then
         output_name+='.exe'
     fi
 
     echo "Building ${package} for ${GOOS}/${GOARCH}..."
-    CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags '-extldflags "-static"' -o "${output_name}" .
-    
+    CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags "$CUSTOM_LDFLAGS" -o "${output_name}" .
+
     if [ $? -ne 0 ]; then
-        echo 'An error has occurred! Aborting the script execution...'
-        exit 1
+        echo "Error: Build failed for ${GOOS}/${GOARCH}"
+        return 1
     fi
 
-done
+    # Compress if requested
+    if [[ "$COMPRESS" == true ]]; then
+        echo "Compressing ${output_name}..."
+        upx -q "${output_name}" 2>/dev/null || echo "Warning: Compression failed for ${output_name}"
+    fi
+
+    echo "✓ Built ${output_name}"
+    return 0
+}
+
+# Build platforms
+if [[ "$PARALLEL" == true ]]; then
+    echo "Building platforms in parallel..."
+    pids=()
+    failed=0
+
+    for platform in "${platforms[@]}"; do
+        build_platform "$platform" &
+        pids+=($!)
+    done
+
+    # Wait for all background jobs
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            failed=1
+        fi
+    done
+
+    if [ $failed -ne 0 ]; then
+        echo ""
+        echo "Error: One or more builds failed"
+        exit 1
+    fi
+else
+    # Sequential builds
+    for platform in "${platforms[@]}"; do
+        if ! build_platform "$platform"; then
+            echo ""
+            echo "Error: Build aborted due to failure"
+            exit 1
+        fi
+    done
+fi
+
+echo ""
+echo "✓ All builds completed successfully"

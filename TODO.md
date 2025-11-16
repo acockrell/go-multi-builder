@@ -10,15 +10,15 @@
 ## Core Features
 
 ### Configuration
-- [ ] Make platforms configurable via `go-multi-build.conf` or env var
-- [ ] Support custom ldflags from config or CLI
-- [ ] Add command-line flags: `--platforms`, `--output-dir`, `--parallel`, `--compress`
-- [ ] Add `-h/--help` flag
-- [ ] Add dry-run mode
+- [x] Make platforms configurable via `go-multi-build.conf` or env var
+- [x] Support custom ldflags from config or CLI
+- [x] Add command-line flags: `--platforms`, `--output-dir`, `--parallel`, `--compress`
+- [x] Add `-h/--help` flag
+- [x] Add dry-run mode
 
 ### Build Improvements
-- [ ] Implement parallel builds for faster compilation
-- [ ] Organize output into directories (e.g., `build/linux-amd64/`)
+- [x] Implement parallel builds for faster compilation
+- [x] Organize output into directories (e.g., `build/linux-amd64/`)
 - [ ] Embed version information using git tags/commits
 - [ ] Add incremental builds (skip already-built platforms)
 - [ ] Add build time tracking and display
@@ -28,7 +28,7 @@
 - [ ] Create release archives (`.tar.gz`, `.zip`)
 - [ ] Generate build manifest file
 - [ ] Add option to strip debug symbols (`-ldflags "-s -w"`)
-- [ ] Optional UPX compression
+- [x] Optional UPX compression
 
 ### User Experience
 - [ ] Auto-detect package name from `go.mod` if not provided
