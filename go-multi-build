@@ -16,7 +16,7 @@ if [[ -z ${package_split} ]]; then
   # if so, just assume that you're building locally
   package_name=${package}
 else
-  # otherwise - reamote package and we need the last element of the array.
+  # otherwise - remote package and we need the last element of the array.
   # Doing this the hard way, because I don't have Bash 4.1
   # Maximum Effort.
   package_name=${package_split[${#package_split[@]}-1]}
@@ -37,10 +37,8 @@ do
         output_name+='.exe'
     fi
 
-    CGO_ENABLED=0  
-    GOCACHE="${WORKSPACE}" 
-    echo "Building ${package} for ${GOOS} on ${GOARCH}..."
-    GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags '-extldflags "-static"' -o "${output_name}" .
+    echo "Building ${package} for ${GOOS}/${GOARCH}..."
+    CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -a -ldflags '-extldflags "-static"' -o "${output_name}" .
     
     if [ $? -ne 0 ]; then
         echo 'An error has occurred! Aborting the script execution...'
