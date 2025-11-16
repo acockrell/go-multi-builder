@@ -20,6 +20,12 @@ Complete reference for all `go-multi-builder` configuration options.
 2. **Environment Variables** - Exported in your shell
 3. **Command-Line Flags** - Passed when running the script
 
+**Quick Setup**: Use `--save-config` to save command-line options to the config file:
+```bash
+./go-multi-build -P -p "linux/amd64,darwin/arm64" -o dist --save-config
+```
+This creates or updates `go-multi-build.conf` with your settings. See [commands.md](./commands.md#--save-config) for details.
+
 ## Configuration Priority
 
 When the same setting is specified multiple ways, this order determines which value is used (highest priority first):

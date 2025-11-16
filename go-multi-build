@@ -23,6 +23,23 @@ MANIFEST=false
 VALIDATE=false
 VALIDATE_STRICT=false
 BINARY_NAME_PATTERN="{name}-{os}-{arch}"
+SAVE_CONFIG=false
+
+# Track which options were set via CLI (for --save-config)
+CLI_PLATFORMS_SET=false
+CLI_OUTPUT_DIR_SET=false
+CLI_PARALLEL_SET=false
+CLI_COMPRESS_SET=false
+CLI_CUSTOM_LDFLAGS_SET=false
+CLI_INCREMENTAL_SET=false
+CLI_EMBED_VERSION_SET=false
+CLI_STRIP_SET=false
+CLI_CHECKSUMS_SET=false
+CLI_ARCHIVE_SET=false
+CLI_MANIFEST_SET=false
+CLI_VALIDATE_SET=false
+CLI_CLEANUP_SET=false
+CLI_BINARY_NAME_PATTERN_SET=false
 
 # Color codes (if colors are enabled)
 COLOR_RED='\033[0;31m'
@@ -64,6 +81,7 @@ OPTIONS:
     --validate-strict       Fail build if validation errors occur
     --cleanup               Remove all previously built binaries before building
     --no-color              Disable colored output
+    --save-config           Save command-line options to config file (interactive)
 
 CONFIGURATION:
     Platforms can be configured via (in order of precedence):
@@ -99,18 +117,22 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--platforms)
             IFS=',' read -ra PLATFORMS_ARG <<< "$2"
+            CLI_PLATFORMS_SET=true
             shift 2
             ;;
         -o|--output-dir)
             OUTPUT_DIR="$2"
+            CLI_OUTPUT_DIR_SET=true
             shift 2
             ;;
         -P|--parallel)
             PARALLEL=true
+            CLI_PARALLEL_SET=true
             shift
             ;;
         -c|--compress)
             COMPRESS=true
+            CLI_COMPRESS_SET=true
             shift
             ;;
         -d|--dry-run)
@@ -119,14 +141,17 @@ while [[ $# -gt 0 ]]; do
             ;;
         -l|--ldflags)
             CUSTOM_LDFLAGS="$2"
+            CLI_CUSTOM_LDFLAGS_SET=true
             shift 2
             ;;
         -i|--incremental)
             INCREMENTAL=true
+            CLI_INCREMENTAL_SET=true
             shift
             ;;
         -v|--version)
             EMBED_VERSION=true
+            CLI_EMBED_VERSION_SET=true
             shift
             ;;
         -V|--verbose)
@@ -139,6 +164,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --cleanup)
             CLEANUP=true
+            CLI_CLEANUP_SET=true
             shift
             ;;
         --no-color)
@@ -147,32 +173,43 @@ while [[ $# -gt 0 ]]; do
             ;;
         -s|--strip)
             STRIP=true
+            CLI_STRIP_SET=true
             shift
             ;;
         --checksums)
             CHECKSUMS=true
+            CLI_CHECKSUMS_SET=true
             shift
             ;;
         --archive)
             ARCHIVE=true
+            CLI_ARCHIVE_SET=true
             shift
             ;;
         --manifest)
             MANIFEST=true
+            CLI_MANIFEST_SET=true
             shift
             ;;
         --validate)
             VALIDATE=true
+            CLI_VALIDATE_SET=true
             shift
             ;;
         --validate-strict)
             VALIDATE=true
             VALIDATE_STRICT=true
+            CLI_VALIDATE_SET=true
             shift
             ;;
         --name-pattern|--binary-pattern)
             BINARY_NAME_PATTERN="$2"
+            CLI_BINARY_NAME_PATTERN_SET=true
             shift 2
+            ;;
+        --save-config)
+            SAVE_CONFIG=true
+            shift
             ;;
         -*)
             echo "Error: Unknown option $1"
@@ -258,6 +295,11 @@ package_name=$(basename "${package}")
 # Validate name pattern
 if ! validate_name_pattern "$BINARY_NAME_PATTERN"; then
     exit 1
+fi
+
+# Save configuration if requested
+if [[ "$SAVE_CONFIG" == true ]]; then
+    save_config
 fi
 
 # Extract version information from git if requested
@@ -427,6 +469,156 @@ validate_name_pattern() {
     fi
 
     return 0
+}
+
+# Save a single config option to file
+save_config_option() {
+    local config_file="$1"
+    local key="$2"
+    local value="$3"
+    local is_boolean="${4:-false}"
+
+    # Check if option already exists (commented or uncommented)
+    local existing_line
+    existing_line=$(grep -n "^${key}=" "$config_file" 2>/dev/null | head -1)
+    local commented_line
+    commented_line=$(grep -n "^#${key}=" "$config_file" 2>/dev/null | head -1)
+
+    if [[ -n "$existing_line" ]] || [[ -n "$commented_line" ]]; then
+        # Get current value
+        local current_value
+        if [[ -n "$existing_line" ]]; then
+            current_value=$(echo "$existing_line" | cut -d= -f2- | sed 's/^[0-9]*://' | tr -d '"')
+        else
+            current_value="(commented out)"
+        fi
+
+        # Show current and new values
+        echo ""
+        log_warning "Option '${key}' already exists in ${config_file}"
+        echo "  Current value: ${current_value}"
+        echo "  New value:     ${value}"
+        echo ""
+        read -p "Overwrite with new value? (y/N): " -n 1 -r
+        echo ""
+
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Skipping ${key} (keeping existing value)"
+            return 0
+        fi
+
+        # Update existing line (uncomment if needed)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS sed requires '' after -i
+            sed -i '' "s|^${key}=.*|${key}=\"${value}\"|" "$config_file"
+            sed -i '' "s|^#${key}=.*|${key}=\"${value}\"|" "$config_file"
+        else
+            sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$config_file"
+            sed -i "s|^#${key}=.*|${key}=\"${value}\"|" "$config_file"
+        fi
+        log_success "✓ Updated ${key} in ${config_file}"
+    else
+        # Add new option to config file
+        echo "" >> "$config_file"
+        echo "# Added by --save-config on $(date)" >> "$config_file"
+        if [[ "$is_boolean" == "true" ]]; then
+            echo "${key}=${value}" >> "$config_file"
+        else
+            echo "${key}=\"${value}\"" >> "$config_file"
+        fi
+        log_success "✓ Added ${key} to ${config_file}"
+    fi
+}
+
+# Save CLI options to config file
+save_config() {
+    local config_file="$CONFIG_FILE"
+
+    log_info "Saving command-line options to ${config_file}..."
+    echo ""
+
+    # Create config file if it doesn't exist
+    if [[ ! -f "$config_file" ]]; then
+        log_info "Creating new config file: ${config_file}"
+        cat > "$config_file" << 'EOF'
+# go-multi-build Configuration File
+# Generated by go-multi-build --save-config
+#
+# Settings in this file can be overridden by:
+#   - Environment variables (e.g., GO_BUILD_PLATFORMS)
+#   - Command-line flags (e.g., --platforms)
+#
+# For more information, see: docs/configuration.md
+
+EOF
+    fi
+
+    # Save each option that was set via CLI
+    if [[ "$CLI_PLATFORMS_SET" == true ]]; then
+        # Convert array to comma-separated string
+        local platforms_str
+        platforms_str=$(IFS=','; echo "${PLATFORMS_ARG[*]}")
+        save_config_option "$config_file" "PLATFORMS" "$platforms_str"
+    fi
+
+    if [[ "$CLI_OUTPUT_DIR_SET" == true ]]; then
+        save_config_option "$config_file" "OUTPUT_DIR" "$OUTPUT_DIR"
+    fi
+
+    if [[ "$CLI_PARALLEL_SET" == true ]]; then
+        save_config_option "$config_file" "PARALLEL" "$PARALLEL" "true"
+    fi
+
+    if [[ "$CLI_COMPRESS_SET" == true ]]; then
+        save_config_option "$config_file" "COMPRESS" "$COMPRESS" "true"
+    fi
+
+    if [[ "$CLI_CUSTOM_LDFLAGS_SET" == true ]]; then
+        save_config_option "$config_file" "CUSTOM_LDFLAGS" "$CUSTOM_LDFLAGS"
+    fi
+
+    if [[ "$CLI_INCREMENTAL_SET" == true ]]; then
+        save_config_option "$config_file" "INCREMENTAL" "$INCREMENTAL" "true"
+    fi
+
+    if [[ "$CLI_EMBED_VERSION_SET" == true ]]; then
+        save_config_option "$config_file" "EMBED_VERSION" "$EMBED_VERSION" "true"
+    fi
+
+    if [[ "$CLI_STRIP_SET" == true ]]; then
+        save_config_option "$config_file" "STRIP" "$STRIP" "true"
+    fi
+
+    if [[ "$CLI_CHECKSUMS_SET" == true ]]; then
+        save_config_option "$config_file" "CHECKSUMS" "$CHECKSUMS" "true"
+    fi
+
+    if [[ "$CLI_ARCHIVE_SET" == true ]]; then
+        save_config_option "$config_file" "ARCHIVE" "$ARCHIVE" "true"
+    fi
+
+    if [[ "$CLI_MANIFEST_SET" == true ]]; then
+        save_config_option "$config_file" "MANIFEST" "$MANIFEST" "true"
+    fi
+
+    if [[ "$CLI_VALIDATE_SET" == true ]]; then
+        save_config_option "$config_file" "VALIDATE" "$VALIDATE" "true"
+        if [[ "$VALIDATE_STRICT" == true ]]; then
+            save_config_option "$config_file" "VALIDATE_STRICT" "$VALIDATE_STRICT" "true"
+        fi
+    fi
+
+    if [[ "$CLI_CLEANUP_SET" == true ]]; then
+        save_config_option "$config_file" "CLEANUP" "$CLEANUP" "true"
+    fi
+
+    if [[ "$CLI_BINARY_NAME_PATTERN_SET" == true ]]; then
+        save_config_option "$config_file" "BINARY_NAME_PATTERN" "$BINARY_NAME_PATTERN"
+    fi
+
+    echo ""
+    log_success "✓ Configuration saved to ${config_file}"
+    echo ""
 }
 
 # Validate binary function

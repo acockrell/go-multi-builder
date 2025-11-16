@@ -96,6 +96,7 @@ A powerful Bash script for building Go projects across multiple platforms in a s
 | `--validate` | Validate cross-compiled binaries |
 | `--validate-strict` | Fail build on validation errors |
 | `--no-color` | Disable colored output |
+| `--save-config` | Save command-line options to config file (interactive) |
 
 ## Configuration
 
